@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vs_executor/ui/theme/app_colors.dart';
 import 'package:vs_executor/core/audio/audio_engine.dart';
 import 'package:vs_executor/core/services/project_service.dart';
+import 'package:vs_executor/core/models/track_model.dart';
 import 'package:vs_executor/core/utils/constants.dart';
 import 'package:vs_executor/ui/widgets/mixer/channel_strip.dart';
 import 'package:vs_executor/ui/widgets/mixer/audio_outlet_selector.dart';
@@ -25,6 +26,7 @@ class _MixerScreenState extends State<MixerScreen>
   late final AnimationController _fadeController;
   bool _isLoading = false;
   final GlobalKey _recentButtonKey = GlobalKey();
+  String? _selectedMobileTrackId;
 
   AudioEngine get engine => widget.engine;
 
@@ -166,18 +168,18 @@ class _MixerScreenState extends State<MixerScreen>
               _buildHeader(isWideScreen),
 
               // Transport bar
-              TransportBar(engine: engine),
+              if (!isMobileApp)
+                TransportBar(engine: engine),
 
               // Interactive Timeline (Sections & Playhead)
-              InteractiveTimeline(engine: engine),
+              if (!isMobileApp)
+                InteractiveTimeline(engine: engine),
 
-              // Mixer area
+              // Mixer area (Agora é a principal no mobile também)
               Expanded(
                 child: engine.tracks.isEmpty
                     ? _buildEmptyState()
-                    : (isMobileApp 
-                        ? _buildMobileMixerButton() 
-                        : _buildMixerArea(isWideScreen)),
+                    : _buildMixerArea(isWideScreen),
               ),
                 ],
               ),
@@ -322,44 +324,6 @@ class _MixerScreenState extends State<MixerScreen>
               TimeSignatureSelector(engine: engine),
               if (isWide) ...[
                 const SizedBox(width: 12),
-                Container(width: 1, height: 28, color: AppColors.border),
-                const SizedBox(width: 12),
-                // Audio Devices Button
-                Tooltip(
-                  message: 'Gerenciar Dispositivos de Áudio',
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.pushNamed(context, '/audio-devices');
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.speaker_phone_rounded,
-                            size: 16,
-                            color: AppColors.accent,
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Áudio',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ],
           ),
@@ -369,23 +333,52 @@ class _MixerScreenState extends State<MixerScreen>
 
           const SizedBox(width: 8),
 
-          // Logo / Title (Right) - Hide if narrow
-          if (isWide || MediaQuery.of(context).size.width > 440)
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: ShaderMask(
-                shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
-                child: const Text(
-                  'VS EXECUTOR',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 1.2,
-                  ),
+          // Transport + Logo / Title (Right)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedBuilder(
+                animation: engine,
+                builder: (context, _) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeaderButton(icon: Icons.skip_previous_rounded, label: 'Início', onTap: engine.goToStart),
+                    const SizedBox(width: 4),
+                    _buildHeaderButton(
+                      icon: Icons.stop_rounded, 
+                      label: 'Stop', 
+                      onTap: engine.stopAll,
+                      color: engine.isPlaying ? AppColors.stopRed : null,
+                    ),
+                    const SizedBox(width: 4),
+                    _buildHeaderButton(
+                      icon: engine.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      label: engine.isPlaying ? 'Pause' : 'Play',
+                      onTap: engine.togglePlayPause,
+                      color: engine.isPlaying ? AppColors.accent : AppColors.playGreen,
+                    ),
+                  ],
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              if (isWide || MediaQuery.of(context).size.width > 440)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: ShaderMask(
+                    shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
+                    child: const Text(
+                      'VS EXECUTOR',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -396,6 +389,7 @@ class _MixerScreenState extends State<MixerScreen>
     required String label,
     required VoidCallback onTap,
     Key? key,
+    Color? color,
   }) {
     return Tooltip(
       message: label,
@@ -409,7 +403,7 @@ class _MixerScreenState extends State<MixerScreen>
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: AppColors.border),
           ),
-          child: Icon(icon, size: 16, color: AppColors.textSecondary),
+          child: Icon(icon, size: 16, color: color ?? AppColors.textSecondary),
         ),
       ),
     );
@@ -449,82 +443,7 @@ class _MixerScreenState extends State<MixerScreen>
 
 
 
-  Widget _buildMobileMixerButton() {
-    return Center(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Mixer Completo',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Gerencie níveis e canais em uma tela focada',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Scaffold(
-                      backgroundColor: AppColors.background,
-                      appBar: AppBar(
-                        backgroundColor: AppColors.surface,
-                        title: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildTransportAction(
-                              icon: Icons.skip_previous_rounded,
-                              onTap: () => engine.goToStart(),
-                              color: AppColors.textSecondary,
-                            ),
-                            const SizedBox(width: 12),
-                            _buildTransportAction(
-                              icon: Icons.stop_rounded,
-                              onTap: () => engine.stopAll(),
-                              color: engine.isPlaying ? AppColors.stopRed : AppColors.textSecondary,
-                            ),
-                            const SizedBox(width: 12),
-                            _buildQuickPlayButton(),
-                          ],
-                        ),
-                        centerTitle: true,
-                        leading: IconButton(
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ),
-                      body: SafeArea(
-                        child: AnimatedBuilder(
-                          animation: engine,
-                          builder: (context, _) => _buildMixerArea(false),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('Abrir Sala de Mixagem'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: AppColors.background,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildEmptyState() {
     return Center(
@@ -591,6 +510,13 @@ class _MixerScreenState extends State<MixerScreen>
                     },
                     itemBuilder: (context, index) {
                       final track = engine.tracks[index];
+                      // Limpa a seleção caso a track clicada anteriormente tenha sumido (ex: deletada)
+                      if (_selectedMobileTrackId != null && !engine.tracks.any((t) => t.id == _selectedMobileTrackId)) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) setState(() => _selectedMobileTrackId = null);
+                        });
+                      }
+
                       return Dismissible(
                         key: Key(track.id),
                         direction: DismissDirection.up,
@@ -618,11 +544,28 @@ class _MixerScreenState extends State<MixerScreen>
                             ),
                           );
                         },
-                        onDismissed: (_) => engine.removeTrack(track.id),
-                        child: ChannelStrip(
-                          track: track,
-                          engine: engine,
-                          isCompact: !isWide,
+                        onDismissed: (_) {
+                          engine.removeTrack(track.id);
+                          if (_selectedMobileTrackId == track.id) {
+                            setState(() => _selectedMobileTrackId = null);
+                          }
+                        },
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!isWide) { // Apenas para mobile
+                              setState(() => _selectedMobileTrackId = track.id);
+                            }
+                          },
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ChannelStrip(
+                              track: track,
+                              engine: engine,
+                              isCompact: !isWide,
+                              isSelected: _selectedMobileTrackId == track.id,
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -689,9 +632,73 @@ class _MixerScreenState extends State<MixerScreen>
           ),
         ),
 
+        // Editar Volume Individual no Rodapé em Mobile
+        if (!isWide && _selectedMobileTrackId != null) 
+          _buildSelectedTrackStrip(),
+
         // Master volume
         _buildMasterStrip(),
       ],
+    );
+  }
+
+  Widget _buildSelectedTrackStrip() {
+    TrackModel? selectedTrack;
+    try {
+      selectedTrack = engine.tracks.firstWhere((t) => t.id == _selectedMobileTrackId);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+           top: BorderSide(color: AppColors.playGreen.withValues(alpha: 0.5), width: 1.5),
+           bottom: const BorderSide(color: AppColors.border, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 1,
+            child: Text(
+              selectedTrack.name,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.playGreen),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.volume_up_rounded, size: 16, color: AppColors.textMuted),
+          Expanded(
+            flex: 4,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                 trackHeight: 3,
+                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                 activeTrackColor: AppColors.playGreen,
+                 inactiveTrackColor: AppColors.surfaceLighter,
+                 thumbColor: AppColors.playGreen,
+              ),
+              child: Slider(
+                value: selectedTrack.volume,
+                onChanged: (val) => engine.setTrackVolume(selectedTrack!.id, val),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
+            onPressed: () => setState(() => _selectedMobileTrackId = null),
+            constraints: const BoxConstraints(),
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
     );
   }
 
@@ -750,17 +757,13 @@ class _MixerScreenState extends State<MixerScreen>
             ),
             const SizedBox(width: 12),
             // Master A Output Device Selector
-            SizedBox(
-              width: 140,
-              height: 40,
-              child: AudioOutletSelector(
-                label: 'A',
-                color: AppColors.accent,
-                selectedDeviceName: engine.masterADeviceName,
-                onDeviceSelected: (device) {
-                  engine.setMasterAOutputDevice(device.name, pan: device.pan, deviceId: device.id);
-                },
-              ),
+            AudioOutletSelector(
+              label: 'A',
+              color: AppColors.accent,
+              selectedDeviceName: engine.masterADeviceName,
+              onDeviceSelected: (device) {
+                engine.setMasterAOutputDevice(device.name, pan: device.pan, deviceId: device.id);
+              },
             ),
             const SizedBox(width: 12),
             Container(width: 1, height: 24, color: AppColors.border),
@@ -808,17 +811,13 @@ class _MixerScreenState extends State<MixerScreen>
             ),
             const SizedBox(width: 12),
             // Master B Output Device Selector
-            SizedBox(
-              width: 140,
-              height: 40,
-              child: AudioOutletSelector(
-                label: 'B',
-                color: Colors.orange,
-                selectedDeviceName: engine.masterBDeviceName,
-                onDeviceSelected: (device) {
-                  engine.setMasterBOutputDevice(device.name, pan: device.pan, deviceId: device.id);
-                },
-              ),
+            AudioOutletSelector(
+              label: 'B',
+              color: Colors.orange,
+              selectedDeviceName: engine.masterBDeviceName,
+              onDeviceSelected: (device) {
+                engine.setMasterBOutputDevice(device.name, pan: device.pan, deviceId: device.id);
+              },
             ),
             const SizedBox(width: 12),
             Container(width: 1, height: 24, color: AppColors.border),
@@ -849,6 +848,102 @@ class _MixerScreenState extends State<MixerScreen>
               ),
             ),
             const SizedBox(width: 12),
+            
+            // Audio Devices Button
+            Container(width: 1, height: 24, color: AppColors.border),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Gerenciar Dispositivos de Áudio',
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pushNamed(context, '/audio-devices');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLighter,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.speaker_phone_rounded,
+                        size: 16,
+                        color: AppColors.accent,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Áudio',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            
+            // Botão para abrir Timeline no Mobile
+            if (Theme.of(context).platform == TargetPlatform.android || Theme.of(context).platform == TargetPlatform.iOS) ...[
+              Container(width: 1, height: 24, color: AppColors.border),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Scaffold(
+                        backgroundColor: AppColors.background,
+                        appBar: AppBar(
+                          backgroundColor: AppColors.surface,
+                          title: const Text(
+                            'Timeline e Sessões',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary)
+                          ),
+                          centerTitle: true,
+                          leading: IconButton(
+                            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textSecondary),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                        body: SafeArea(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TransportBar(engine: engine),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+                                  child: InteractiveTimeline(engine: engine, isExpanded: true),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.timeline_rounded, size: 16, color: AppColors.textPrimary),
+                label: const Text('Timeline', style: TextStyle(fontSize: 12, color: AppColors.textPrimary)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.surfaceLighter,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 32),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
           ],
         ),
       ),

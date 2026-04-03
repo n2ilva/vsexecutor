@@ -36,16 +36,22 @@ class _AudioOutletSelectorState extends State<AudioOutletSelector> {
   }
 
   Future<void> _loadDevices() async {
+    List<AudioDevice> devices = [];
     try {
-      final devices = await _audioPlugin.getAudioDevices();
-      setState(() {
-        _devices = devices;
-        _isLoading = false;
-      });
+      devices = await _audioPlugin.getAudioDevices();
     } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint('Erro ao carregar dispositivos: $e');
+      debugPrint('Aviso: Plugin de áudio nativo indisponível ou falhou ($e).');
     }
+    
+    // Virtual devices for Master buss panning enforcement
+    devices.insert(0, AudioDevice(id: -1, name: 'PAN Esquerdo', type: 'virtual', isDefault: false, pan: -1.0));
+    devices.insert(1, AudioDevice(id: -2, name: 'PAN Direito', type: 'virtual', isDefault: false, pan: 1.0));
+    devices.insert(2, AudioDevice(id: -3, name: 'PAN Centro', type: 'virtual', isDefault: false, pan: 0.0));
+
+    setState(() {
+      _devices = devices;
+      _isLoading = false;
+    });
   }
 
   void _showDeviceMenu() {
@@ -59,11 +65,9 @@ class _AudioOutletSelectorState extends State<AudioOutletSelector> {
 
     showMenu(
       context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        0, // Limite superior
-        position.dx + size.width,
-        screenHeight - position.dy, // Distância do fundo da tela até o topo do botão
+      position: RelativeRect.fromSize(
+        position & size,
+        Size(MediaQuery.of(context).size.width, screenHeight),
       ),
       items: [
         ..._devices.map((device) {
@@ -128,52 +132,31 @@ class _AudioOutletSelectorState extends State<AudioOutletSelector> {
       child: GestureDetector(
         onTap: widget.enabled ? _showDeviceMenu : null,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(
             color: widget.color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: widget.color.withValues(alpha: 0.3),
               width: 1,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.speaker,
-                size: 14,
-                color: widget.color,
-              ),
-              const SizedBox(width: 4),
-              _isLoading
-                  ? SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(widget.color),
-                      ),
-                    )
-                  : Flexible(
-                      child: Text(
-                        widget.selectedDeviceName ?? 'Sistema',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                          color: widget.color,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        maxLines: 1,
-                      ),
+          child: Center(
+            child: _isLoading
+                ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(widget.color),
                     ),
-              const SizedBox(width: 2),
-              Icon(
-                Icons.arrow_drop_down,
-                size: 12,
-                color: widget.color,
-              ),
-            ],
+                  )
+                : Icon(
+                    Icons.speaker_group_rounded,
+                    size: 14,
+                    color: widget.color,
+                  ),
           ),
         ),
       ),

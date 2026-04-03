@@ -25,33 +25,34 @@ class _AudioDevicesScreenState extends State<AudioDevicesScreen> {
   }
 
   Future<void> _loadDevices() async {
+    List<AudioDevice> devices = [];
     try {
-      final devices = await _audioPlugin.getAudioDevices();
-
-      setState(() {
-        _devices = devices;
-        // Inicializar pans com valores dos dispositivos, priorizando o que está no AudioEngine
-        for (final device in devices) {
-          _devicePans[device.id] = widget.engine.allKnownDevicePans[device.id] ?? device.pan;
-        }
-        _isLoading = false;
-      });
+      devices = await _audioPlugin.getAudioDevices();
     } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao carregar dispositivos: $e'),
-            backgroundColor: AppColors.muteRed,
-          ),
-        );
-      }
+      debugPrint('Aviso: Plugin de áudio nativo indisponível ou falhou ($e).');
     }
+
+    // Virtual devices for Master buss panning enforcement
+    devices.insert(0, AudioDevice(id: -1, name: 'PAN Esquerdo', type: 'virtual', isDefault: false, pan: -1.0));
+    devices.insert(1, AudioDevice(id: -2, name: 'PAN Direito', type: 'virtual', isDefault: false, pan: 1.0));
+    devices.insert(2, AudioDevice(id: -3, name: 'PAN Centro', type: 'virtual', isDefault: false, pan: 0.0));
+
+    setState(() {
+      _devices = devices;
+      // Inicializar pans com valores dos dispositivos, priorizando o que está no AudioEngine
+      for (final device in devices) {
+        _devicePans[device.id] = widget.engine.allKnownDevicePans[device.id] ?? device.pan;
+      }
+      _isLoading = false;
+    });
   }
 
   Future<void> _setPan(int deviceId, double pan) async {
     try {
-      final success = await _audioPlugin.setDevicePan(deviceId, pan);
+      bool success = true;
+      if (deviceId >= 0) {
+        success = await _audioPlugin.setDevicePan(deviceId, pan);
+      }
       if (success) {
         setState(() {
           _devicePans[deviceId] = pan;

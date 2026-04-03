@@ -5,6 +5,9 @@ import '../../core/audio/audio_engine.dart';
 import '../../core/models/track_model.dart';
 import '../../ui/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
+import 'dart:typed_data';
+import '../../ui/widgets/mixer/waveform_widget.dart';
 
 class BpmAnalysisScreen extends StatefulWidget {
   final AudioEngine engine;
@@ -34,7 +37,7 @@ class _BpmAnalysisScreenState extends State<BpmAnalysisScreen> {
   double _playbackMs = 0.0;
   Timer? _playbackTimer;
   
-  List<double> _peaks = [];
+  WaveformData? _waveformData;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -57,17 +60,52 @@ class _BpmAnalysisScreenState extends State<BpmAnalysisScreen> {
     super.dispose();
   }
 
-  void _generateWaveform() {
-    final seed = widget.track.filePath?.hashCode ?? widget.track.id.hashCode;
-    final random = math.Random(seed);
-    const points = 800;
-    _peaks = List.generate(points, (i) {
-      double base = 0.1;
-      if (i % 8 == 0) base += 0.5 + random.nextDouble() * 0.4;
-      if (i % 16 == 0) base += 0.2;
-      double energy = math.sin(i / points * math.pi * 10) * 0.2 + 0.3;
-      return (base * energy + random.nextDouble() * 0.1).clamp(0.05, 1.0);
-    });
+  Future<void> _generateWaveform() async {
+    final filePath = widget.track.filePath;
+    if (filePath == null) {
+      setState(() {
+        _waveformData = WaveformProcessor.generateFake(resolution: 1200);
+      });
+      return;
+    }
+
+    try {
+      final samples = await SoLoud.instance.readSamplesFromFile(
+        filePath,
+        1200,
+        average: true,
+      );
+
+      final peaks = Float32List(1200);
+      final troughs = Float32List(1200);
+      final rms = Float32List(1200);
+
+      for (int i = 0; i < samples.length && i < 1200; i++) {
+        final val = samples[i].abs();
+        peaks[i] = val;
+        troughs[i] = -val;
+        rms[i] = val;
+      }
+
+      if (mounted) {
+        setState(() {
+          _waveformData = WaveformData(
+            peaks: peaks,
+            troughs: troughs,
+            rms: rms,
+            duration: widget.track.totalDuration.inMilliseconds / 1000.0,
+            sampleRate: 44100,
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao gerar waveform real: $e");
+      if (mounted) {
+        setState(() {
+          _waveformData = WaveformProcessor.generateFake(resolution: 1200);
+        });
+      }
+    }
   }
 
   void _calculateBpm() {
@@ -365,24 +403,28 @@ class _BpmAnalysisScreenState extends State<BpmAnalysisScreen> {
   }
 
   Widget _buildWaveformLines(double height) {
+    if (_waveformData == null) return const SizedBox();
+    
+    final colors = WaveformColors(
+      played: AppColors.accent,
+      unplayed: AppColors.textMuted.withValues(alpha: 0.5),
+      rmsPlayed: AppColors.accent.withValues(alpha: 0.7),
+      rmsUnplayed: AppColors.textMuted.withValues(alpha: 0.3),
+      playhead: Colors.transparent, // Cursor separado no _buildPlaybackCursor
+      background: Colors.transparent,
+    );
+
+    final totalMs = widget.track.totalDuration.inMilliseconds.toDouble();
+
     return Positioned.fill(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: _peaks.map((p) => Expanded(
-            child: Container(
-              height: p * (height - 20),
-              margin: const EdgeInsets.symmetric(horizontal: 0.5),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.accent.withValues(alpha: 0.8), AppColors.accent.withValues(alpha: 0.2)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          )).toList(),
+      child: CustomPaint(
+        painter: WaveformPainter(
+          data: _waveformData!,
+          progress: totalMs > 0 ? _playbackMs / totalMs : 0.0,
+          style: WaveformStyle.classic,
+          colors: colors,
+          gain: 1.2,
+          showCenterLine: false,
         ),
       ),
     );

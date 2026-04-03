@@ -11,12 +11,14 @@ class ChannelStrip extends StatelessWidget {
   final TrackModel track;
   final AudioEngine engine;
   final bool isCompact;
+  final bool isSelected;
 
   const ChannelStrip({
     super.key,
     required this.track,
     required this.engine,
     this.isCompact = false,
+    this.isSelected = false,
   });
 
   @override
@@ -28,10 +30,12 @@ class ChannelStrip extends StatelessWidget {
         color: AppColors.channelStrip,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: track.isSolo
-              ? AppColors.soloYellow.withValues(alpha: 0.5)
-              : AppColors.border,
-          width: track.isSolo ? 1.5 : 1,
+          color: isSelected 
+              ? AppColors.playGreen
+              : track.isSolo
+                  ? AppColors.soloYellow.withValues(alpha: 0.5)
+                  : AppColors.border,
+          width: (isSelected || track.isSolo) ? 1.5 : 1,
         ),
         boxShadow: track.isSolo
             ? [
@@ -44,6 +48,7 @@ class ChannelStrip extends StatelessWidget {
             : null,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // HEADER COLORIDO QUE FUNCIONA COMO DRAG HANDLE
           ReorderableDragStartListener(
@@ -123,28 +128,28 @@ class ChannelStrip extends StatelessWidget {
           
           const SizedBox(height: 4),
 
-          // VU Meter + Fader
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                   VuMeter(
-                    level: track.level,
-                    width: 6,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: VolumeFader(
-                      value: track.volume,
-                      onChanged: (val) => engine.setTrackVolume(track.id, val),
+          if (!isCompact)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                     VuMeter(
+                      level: track.level,
+                      width: 6,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: VolumeFader(
+                        value: track.volume,
+                        onChanged: (val) => engine.setTrackVolume(track.id, val),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
           const SizedBox(height: 6),
 
@@ -176,89 +181,93 @@ class ChannelStrip extends StatelessWidget {
 
           const SizedBox(height: 6),
           
-          // BPM Analysis "Magic" Button
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BpmAnalysisScreen(
-                    engine: engine,
-                    track: track,
+          if (!isCompact) ...[
+            // BPM Analysis "Magic" Button
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BpmAnalysisScreen(
+                      engine: engine,
+                      track: track,
+                    ),
+                  ),
+                );
+              },
+              child: Tooltip(
+                message: 'Analisar BPM / Waveform',
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.auto_fix_high_rounded,
+                      size: 14,
+                      color: AppColors.accent,
+                    ),
                   ),
                 ),
-              );
-            },
-            child: Tooltip(
-              message: 'Analisar BPM / Waveform',
+              ),
+            ),
+
+            const SizedBox(height: 6),
+            
+            // Remove Track Button
+            GestureDetector(
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppColors.surface,
+                    title: const Text('Remover faixa?'),
+                    content: Text('Deseja remover "${track.name}"?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text(
+                          'Remover',
+                          style: TextStyle(color: AppColors.muteRed),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  engine.removeTrack(track.id);
+                }
+              },
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4),
-                height: 28,
+                height: 24,
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.1),
+                  color: AppColors.surfaceLighter,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: const Center(
                   child: Icon(
-                    Icons.auto_fix_high_rounded,
+                    Icons.delete_outline_rounded,
                     size: 14,
-                    color: AppColors.accent,
+                    color: AppColors.textMuted,
                   ),
                 ),
               ),
             ),
-          ),
-
-          const SizedBox(height: 6),
-          
-          // Remove Track Button
-          GestureDetector(
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  backgroundColor: AppColors.surface,
-                  title: const Text('Remover faixa?'),
-                  content: Text('Deseja remover "${track.name}"?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text(
-                        'Remover',
-                        style: TextStyle(color: AppColors.muteRed),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                engine.removeTrack(track.id);
-              }
-            },
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLighter,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Center(
-                child: Icon(
-                  Icons.delete_outline_rounded,
-                  size: 14,
-                  color: AppColors.textMuted,
-                ),
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 6),
+            
+            const SizedBox(height: 6),
+          ] else ...[
+            const SizedBox(height: 2), // Margem final pro modo compacto
+          ],
         ],
       ),
     );

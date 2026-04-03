@@ -16,6 +16,7 @@ class BpmControl extends StatefulWidget {
 
 class _BpmControlState extends State<BpmControl> {
   final _bpmController = TextEditingController();
+  final _focusNode = FocusNode();
   final List<DateTime> _tapTimes = [];
 
   @override
@@ -23,10 +24,11 @@ class _BpmControlState extends State<BpmControl> {
     super.initState();
     _bpmController.text = widget.engine.bpm.toStringAsFixed(1);
     widget.engine.addListener(_onEngineChanged);
+    _focusNode.addListener(_onFocusChanged);
   }
 
   void _onEngineChanged() {
-    if (mounted) {
+    if (mounted && !_focusNode.hasFocus) {
       final newBpm = widget.engine.bpm.toStringAsFixed(1);
       if (_bpmController.text != newBpm) {
         setState(() {
@@ -36,10 +38,27 @@ class _BpmControlState extends State<BpmControl> {
     }
   }
 
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      // Quando perde o foco, tentamos aplicar o que foi formatado se o user não clicou Enter
+      final bpm = double.tryParse(_bpmController.text);
+      if (bpm != null) {
+        widget.engine.setBpm(bpm);
+      }
+
+      // Re-formata para o padrão correto do engine (ex: 120 -> 120.0)
+      setState(() {
+        _bpmController.text = widget.engine.bpm.toStringAsFixed(1);
+      });
+    }
+  }
+
   @override
   void dispose() {
     widget.engine.removeListener(_onEngineChanged);
+    _focusNode.removeListener(_onFocusChanged);
     _bpmController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -77,10 +96,12 @@ class _BpmControlState extends State<BpmControl> {
 
   @override
   Widget build(BuildContext context) {
-    // Sincroniza o texto caso tenha mudado externamente
-    final engineBpmText = widget.engine.bpm.toStringAsFixed(1);
-    if (_bpmController.text != engineBpmText) {
-      _bpmController.text = engineBpmText;
+    // Sincroniza o texto caso tenha mudado externamente (apenas se nao estiver focado)
+    if (!_focusNode.hasFocus) {
+      final engineBpmText = widget.engine.bpm.toStringAsFixed(1);
+      if (_bpmController.text != engineBpmText) {
+        _bpmController.text = engineBpmText;
+      }
     }
 
     return Row(
@@ -107,6 +128,7 @@ class _BpmControlState extends State<BpmControl> {
                 width: 55,
                 child: TextField(
                   controller: _bpmController,
+                  focusNode: _focusNode,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -124,6 +146,7 @@ class _BpmControlState extends State<BpmControl> {
                     final bpm = double.tryParse(val);
                     if (bpm != null) {
                       widget.engine.setBpm(bpm);
+                      _focusNode.unfocus();
                     }
                   },
                 ),

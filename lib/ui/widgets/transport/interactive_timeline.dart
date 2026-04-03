@@ -6,8 +6,13 @@ import 'dart:math' as math;
 
 class InteractiveTimeline extends StatefulWidget {
   final AudioEngine engine;
+  final bool isExpanded;
 
-  const InteractiveTimeline({super.key, required this.engine});
+  const InteractiveTimeline({
+    super.key, 
+    required this.engine,
+    this.isExpanded = false,
+  });
 
   @override
   State<InteractiveTimeline> createState() => _InteractiveTimelineState();
@@ -58,7 +63,7 @@ class _InteractiveTimelineState extends State<InteractiveTimeline> {
               final numBars = totalMs > 0 ? (totalMs / barMs).ceil() : 0;
 
               return Container(
-                height: 60,
+                height: widget.isExpanded ? constraints.maxHeight : 60,
                 decoration: BoxDecoration(
                   color: AppColors.background,
                   borderRadius: BorderRadius.circular(4),
@@ -177,7 +182,12 @@ class _InteractiveTimelineState extends State<InteractiveTimeline> {
   Widget _buildEmpty() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Container(height: 60, color: AppColors.background, alignment: Alignment.bottomCenter, child: Container(height: 1, color: AppColors.border)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final h = widget.isExpanded ? constraints.maxHeight : 60.0;
+          return Container(height: h, color: AppColors.background, alignment: Alignment.bottomCenter, child: Container(height: 1, color: AppColors.border));
+        }
+      ),
     );
   }
 

@@ -14,6 +14,7 @@ class AudioEngine extends ChangeNotifier {
   final SoLoud _soloud = SoLoud.instance;
   bool _isInitialized = false;
   Timer? _positionTimer;
+  int _ticksCount = 0;
 
   // Transport state
   bool _isPlaying = false;
@@ -136,9 +137,9 @@ class AudioEngine extends ChangeNotifier {
 
       _isInitialized = true;
 
-      // Start position tracking timer
+      // Start position tracking timer with high precision for metronome/loop accuracy
       _positionTimer = Timer.periodic(
-        const Duration(milliseconds: 16), // ~60fps
+        const Duration(milliseconds: 4), // ~250fps for tighter tracking
         (_) => _updatePosition(),
       );
 
@@ -182,6 +183,18 @@ class AudioEngine extends ChangeNotifier {
       track.audioSource = await _soloud.loadFile(filePath, mode: LoadMode.memory);
       track.totalDuration = _soloud.getLength(track.audioSource!);
       track.isLoaded = true;
+
+      try {
+        // Obter envelopes de audio reais com alta resolucao (~2400 pontos para duracao inteira)
+        final samples = await _soloud.readSamplesFromFile(filePath, 2400, average: true);
+        final rmsList = Float32List(samples.length);
+        for(int i = 0; i < samples.length; i++) {
+          rmsList[i] = samples[i].abs();
+        }
+        track.rmsWaveform = rmsList;
+      } catch (e) {
+        debugPrint('Aviso: Falha ao gerar rmsWaveform para a trilha -> $e');
+      }
 
       // Enable visualization for this source (some versions of SoLoud use this to enable per-source FFT)
       _soloud.setVisualizationEnabled(true);
@@ -873,12 +886,16 @@ class AudioEngine extends ChangeNotifier {
       }
     }
 
-    notifyListeners();
+    // Limit UI updates to ~60fps (every 4th tick of the 4ms timer = 16ms)
+    _ticksCount++;
+    if (_ticksCount >= 4) {
+      _ticksCount = 0;
+      notifyListeners();
+    }
   }
 
   /// Calculate dynamic audio intensity based on position and audio characteristics
   double _calculateIntensity(TrackModel track, Duration position, int trackIndex) {
-    // Start with the base volume
     double baseIntensity = track.volume;
 
     if (track.soundHandle == null) return baseIntensity;
@@ -886,37 +903,48 @@ class AudioEngine extends ChangeNotifier {
     try {
       // Get position in milliseconds
       final posMs = position.inMilliseconds.toDouble();
-      final handleValue = track.soundHandle!.hashCode.toDouble();
+      double dynamicIntensity = 0.0;
 
-      // Create deterministic but varied animation based on position
-      // This simulates different audio intensities across the track timeline
-      final timePhase = (posMs / 1000.0) % 16.0; // 16 second cycle
-      final trackPhase = (handleValue % 100.0) / 100.0; // Unique per track
-
-      // Generate harmonic series for organic feel
-      double harmonic = 0;
-      for (int h = 1; h <= 4; h++) {
-        double freq = h * 0.5;
-        harmonic += math.sin((timePhase + trackPhase) * freq * math.pi) / h;
+      // Se o envelope real estiver carregado (Visualização Dinâmica e Verdadeira)
+      if (track.rmsWaveform != null && track.rmsWaveform!.isNotEmpty) {
+        final numSamples = track.rmsWaveform!.length;
+        final durationMs = track.durationMs;
+        if (durationMs > 0) {
+          final progress = (posMs / durationMs).clamp(0.0, 1.0);
+          final index = (progress * (numSamples - 1)).round();
+          if (index >= 0 && index < numSamples) {
+            dynamicIntensity = track.rmsWaveform![index] * 1.5; // Fator de ganho visual
+          }
+        }
+      } else {
+        // Fallback: Animação sintética baseada na posição (apenas caso de erro na leitura do arquivo)
+        final handleValue = track.soundHandle!.hashCode.toDouble();
+        final timePhase = (posMs / 1000.0) % 16.0;
+        final trackPhase = (handleValue % 100.0) / 100.0;
+        
+        double harmonic = 0;
+        for (int h = 1; h <= 4; h++) {
+          double freq = h * 0.5;
+          harmonic += math.sin((timePhase + trackPhase) * freq * math.pi) / h;
+        }
+        harmonic = (harmonic + 2) / 4; 
+        
+        final seed = (posMs.toInt() ~/ 50) ^ track.id.hashCode;
+        final pseudo = (math.sin(seed * 0.1) + 1) / 2;
+        dynamicIntensity = harmonic * 0.4 + pseudo * 0.3;
       }
-      harmonic = (harmonic + 2) / 4; // Normalize to 0-1
+      
+      dynamicIntensity = dynamicIntensity * baseIntensity;
 
-      // Add some randomness for more organic feel
-      final seed = (posMs.toInt() ~/ 50) ^ track.id.hashCode;
-      final pseudo = (math.sin(seed * 0.1) + 1) / 2;
-
-      // Combine effects: harmonic + pseudo-randomness
-      double dynamicIntensity = harmonic * 0.4 + pseudo * 0.3 + baseIntensity * 0.3;
-
-      // Smooth decay with peak hold
+      // Smooth decay with peak hold (Funciona de forma similar p/ amortecer a onda real ou sintética)
       if (dynamicIntensity > _trackDecay[trackIndex]) {
         _trackDecay[trackIndex] = dynamicIntensity;
         _trackPeaks[trackIndex] = dynamicIntensity;
-        _trackSamples[trackIndex] = 30; // Hold peak for ~30 frames
+        _trackSamples[trackIndex] = 10; // Reduzido o delay de pico (respostas mais reais e nervosas)
       } else if (_trackSamples[trackIndex] > 0) {
         _trackSamples[trackIndex]--;
       } else {
-        _trackDecay[trackIndex] = _trackDecay[trackIndex] * 0.95;
+        _trackDecay[trackIndex] = _trackDecay[trackIndex] * 0.85; // Decaimento mais acentuado (rápido para silencio)
       }
 
       return _trackDecay[trackIndex].clamp(0.0, 1.0);

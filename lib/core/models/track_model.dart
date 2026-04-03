@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:typed_data';
 import '../utils/constants.dart';
 
 /// Represents a single audio track in the mixer
@@ -34,6 +35,7 @@ class TrackModel {
   bool isPlaying;
   double level; // Real-time audio level (0.0 to 1.0)
   Duration totalDuration;
+  Float32List? rmsWaveform; // Pre-calculated RMS envelopes for UI visualizer
 
   TrackModel({
     String? id,
